@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/mmcdole/gofeed"
@@ -48,7 +49,7 @@ func (a *arxivCollector) Collect(ctx context.Context, since time.Time) ([]model.
 		// arXiv 301-redirects http -> https and gofeed won't follow it, so use https directly.
 		endpoint := "https://export.arxiv.org/api/query?" + q.Encode()
 
-		feed, err := a.parser.ParseURLWithContext(endpoint, ctx)
+		feed, err := a.fetchWithRetry(ctx, endpoint, cat)
 		if err != nil {
 			log.Printf("[collect] arxiv cat %s failed: %v", cat, err)
 			continue
@@ -72,4 +73,34 @@ func (a *arxivCollector) Collect(ctx context.Context, since time.Time) ([]model.
 		}
 	}
 	return out, nil
+}
+
+// fetchWithRetry calls arXiv with exponential backoff specifically on 429s.
+// arXiv's published rate-limit advice is "1 request per 3 seconds"; the shared
+// export.arxiv.org host enforces this aggressively when multiple clients share
+// the same egress IP (CI runners). Other errors fail fast — only rate-limit
+// recovery benefits from retrying.
+func (a *arxivCollector) fetchWithRetry(ctx context.Context, endpoint, cat string) (*gofeed.Feed, error) {
+	const maxAttempts = 3
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(1<<(attempt-1)) * 10 * time.Second // 10s, 20s
+			log.Printf("[collect] arxiv cat %s 429 — backing off %s (attempt %d/%d)", cat, backoff, attempt+1, maxAttempts)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
+		feed, err := a.parser.ParseURLWithContext(endpoint, ctx)
+		if err == nil {
+			return feed, nil
+		}
+		lastErr = err
+		if !strings.Contains(err.Error(), "429") {
+			return nil, err
+		}
+	}
+	return nil, lastErr
 }
