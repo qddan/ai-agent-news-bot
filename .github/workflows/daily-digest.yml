@@ -2,7 +2,8 @@ name: Daily AI-Agent Digest
 
 on:
   schedule:
-    - cron: "0 2 * * *"   # 02:00 UTC = 09:00 ICT (GitHub cron may drift a few minutes)
+    - cron: "0 2 * * *"    # 02:00 UTC = 09:00 ICT (GitHub cron may drift a few minutes)
+    - cron: "35 6 * * *"   # one-off smoke test ~13:35 ICT — REMOVE after verification
   workflow_dispatch: {}
 
 concurrency:
