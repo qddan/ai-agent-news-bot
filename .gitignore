@@ -1,0 +1,13 @@
+# Secrets — never commit
+.env
+
+# Build output
+/bin/
+
+# OS / editor
+.DS_Store
+*.swp
+
+# Agent tooling scratch
+.claude/
+plans/
